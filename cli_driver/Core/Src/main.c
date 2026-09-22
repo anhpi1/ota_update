@@ -73,19 +73,12 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#include "log.h"
+#include "logv2.h"
 
-char uart1_tx_buf[256] = {0};
-LogMessage Lmsg = {0};
 
-typedef struct {
-  char msg_tx[256];
-  char msg_rx[256];
-  uint8_t len_rx;
-  uint8_t len_tx;
-  uint8_t rx_flag;
-  uint8_t tx_flag;
-} BuffUart;
+uint8_t uart1_tx_buf[256];
+LogMessage Lmsg;
+
 
 BuffUart data_uart2 = {0};
 
@@ -170,7 +163,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
 
-  log_init(&Lmsg);
+
   logTaskHandle = osThreadNew(logTask, NULL, &logTask_attributes);
   testTaskHandle = osThreadNew(testTask, NULL, &testTask_attributes);
 
@@ -360,9 +353,7 @@ void logTask(void *argument)
   /* USER CODE BEGIN 5 */
     for(;;)
     {
-      if (log_trasnmit(&Lmsg)) {
-          // Log message transmitted successfully
-      }
+      log_transmit();
       osDelay(10); // Delay 10ms to avoid excessive CPU usage
     }
   /* USER CODE END 5 */
@@ -373,9 +364,7 @@ void testTask(void *argument)
   /* USER CODE BEGIN 5 */
   for(;;)
   {
-    log_add_init(&Lmsg);
-    log_add_text(&Lmsg, "Test log message");
-    log_end(LOG_TYPE_INFO, &Lmsg, __FILE__, __LINE__);
+    LOG_INFO("Test log message: %f", 12.3);
     osDelay(1000); // Delay 1s để tránh chiếm CPU quá nhiều
   }
   /* USER CODE END 5 */
@@ -394,9 +383,7 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
     for(;;)
     {
-      if (log_trasnmit(&Lmsg)) {
-          // Log message transmitted successfully
-      }
+
       osDelay(10); // Delay 10ms to avoid excessive CPU usage
     }
   /* USER CODE END 5 */

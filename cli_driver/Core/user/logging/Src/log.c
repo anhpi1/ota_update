@@ -4,7 +4,7 @@
 extern UART_HandleTypeDef huart1;
 extern uint8_t uart1_tx_buf[];
 
-uint8_t log_trasnmit(LogMessage *Lmsg) 
+uint8_t log_transmit(LogMessage *Lmsg) 
 {
     // định nghĩa kiểm tra kênh truyền ở đây
     if(huart1.gState == HAL_UART_STATE_BUSY_TX) return 0; // Nếu đang truyền thì không làm gì

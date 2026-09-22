@@ -1,6 +1,6 @@
 
 add_library(user_lib OBJECT
-    logging/Src/log.c
+    logging/Src/logv2.c
 )
 
 

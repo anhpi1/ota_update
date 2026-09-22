@@ -59,6 +59,13 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
+typedef struct {
+  char msg_tx[256];
+  char msg_rx[256];
+  uint8_t is_use_rx_flag;
+  uint8_t is_use_tx_flag;
+} BuffUart;
+
 
 /* USER CODE END Private defines */
 
