@@ -1,0 +1,97 @@
+NHẬT KÝ KỸ THUẬT: PHÁT TRIỂN MODULE CLI & LOGGING SYSTEM
+
+1. Khởi tạo bài toán & Thử nghiệm Log v1 (Thủ công)
+- Bối cảnh: Khi bắt đầu xây dựng module CLI, nhận thấy hệ thống bắt buộc phải có cơ chế ghi log để giám sát luồng thực thi và gỡ lỗi.
+- Bản v1 (Tự viết thủ công): Ban đầu tự xây dựng hàm ghi log thủ công để tiết kiệm bộ nhớ. Tuy nhiên, cách này bộc lộ nhược điểm cồng kềnh khi mỗi lần in log phải tốn trung bình tới 4 dòng lệnh (format dữ liệu, gán buffer, tính độ dài, gọi hàm gửi).
+- Đánh giá & Benchmark:
+  + Thử nghiệm thực tế cho thấy mã thủ công chỉ tiết kiệm được khoảng 1KB Flash so với printf.
+  + Do mỗi dòng log thủ công tốn nhiều lệnh máy hơn, điểm hòa vốn Flash so với printf chỉ đạt được khi toàn bộ chương trình có dưới 60 dòng log (quá ít đối với một firmware thực tế).
+  + Khi cố gắng gom mã thủ công lại thành 1 dòng macro, dung lượng mã máy phình to tương đương printf.
+  + Thực tế, printf trong GCC (Newlib-nano) đã được tối ưu rất tốt khi tắt định dạng số thực (%f).
+- Quyết định: Bỏ việc tự viết chuỗi thủ công, chuyển sang Bản v2 tận dụng hàm _write() của printf.
+
+2. Log v2, Vấn đề Queue và Phân vùng Bộ nhớ
+- Vấn đề Queue: Ban đầu thử tự cài đặt Queue thủ công để đệm dữ liệu log ra UART DMA nhưng phát sinh nhiều lỗi đồng bộ và phức tạp không cần thiết.
+- Nhận thức về Linker & Bộ nhớ: Trước đó có lầm tưởng biến toàn cục bắt buộc phải nằm cố định trước hàm main(). Sau khi phân tích sâu cơ chế Linker Script (.ld), nhận ra hoàn toàn có thể phân tách vùng Flash/SRAM riêng biệt. Khi hệ thống cập nhật App mới qua OTA, App vẫn tự khởi tạo và truy cập biến toàn cục của chính nó bình thường.
+- Quyết định: Không "phát minh lại bánh xe", chuyển sang dùng trực tiếp osMessageQueue chuẩn của FreeRTOS/CMSIS-RTOS v2 có sẵn trong Kernel.
+
+3. Quy tắc Thiết kế & Chuẩn Module hóa Rút ra
+- Triết lý: Không phức tạp hóa; ưu tiên hệ thống chạy được trước bằng cách tận dụng tối đa các API có sẵn của RTOS và thư viện chuẩn.
+- Cấu trúc Module hóa chuẩn:
+  1. typedef enum: Định nghĩa bảng mã lỗi tường minh cho từng module (logStatus, cliStatus).
+  2. struct: Gom toàn bộ trạng thái vào một struct quản lý (chứa handle ngoại vi, queue, cờ trạng thái và buffer trung gian cho DMA).
+  3. Init function: Luôn có hàm khởi tạo (logInit, cliInit) làm nhiệm vụ ánh xạ phần cứng và cấp phát tài nguyên ban đầu.
+
+* Bài toán Đánh đổi: Tính Đa dụng (Portability) vs. Sự Tinh gọn (YAGNI):
+- Băn khoăn kiến trúc: Ban đầu muốn thiết kế module Log độc lập hoàn toàn để tái sử dụng được cho cả hệ thống Bare-metal (không OS) lẫn RTOS bằng cách tách riêng tầng Driver và bọc tầng RTOS ra ngoài.
+- Vấn đề phát sinh: 
+  + Hàm `_write()` (backend của printf) khi chạy RTOS bắt buộc phải đẩy dữ liệu vào Queue (bất đồng bộ/non-blocking), còn trên Bare-metal lại phải gọi trực tiếp hàm truyền UART Polling (đồng bộ/blocking).
+  + Việc cố gắng hỗ trợ cả hai chế độ đòi hỏi phải cấu hình macro `#ifdef` hoặc dùng con trỏ hàm (Function Pointer Injection), làm phức tạp hóa mã nguồn và sinh ra nhiều tầng trung gian không cần thiết (Over-engineering).
+- Quyết định kỹ thuật:
+  + Áp dụng nguyên lý YAGNI ("You Aren't Gonna Need It") & Simplicity First: Do dự án định hướng sử dụng FreeRTOS làm nền tảng cốt lõi xuyên suốt, quyết định tích hợp sâu FreeRTOS (`osMessageQueue`) trực tiếp vào module Log ngay từ đầu.
+  + Kết quả: Loại bỏ mã nguồn dư thừa, tối ưu dung lượng Flash/RAM và giữ luồng xử lý dữ liệu log đơn giản, tường minh, an toàn đồng thời (thread-safe).
+
+* Bài toán Khai báo Biến Toàn cục trong Thư viện & Giữ tính Đóng gói (Encapsulation):
+- Vấn đề phát sinh: 
+  + Hàm `_write(int file, char *ptr, int len)` là hàm chuẩn của thư viện C runtime (GCC Newlib), có chữ ký hàm cố định nên không thể truyền thêm con trỏ ngữ cảnh (`logStruct *log_struct`) vào hàm này.
+  + Do đó, `_write()` bắt buộc phải truy cập vào một thực thể log ở cấp độ toàn cục.
+  + Nếu khai báo biến toàn cục mở bên trong thư viện hoặc dùng `extern logStruct log1;`, mã nguồn sẽ bị phụ thuộc cứng (tight coupling) vào tên biến của ứng dụng bên ngoài, phá vỡ tính module hóa và vi phạm chuẩn Clean Code / MISRA C.
+- Giải pháp Kiến trúc (Internal Static Pointer):
+  + Người dùng bên ngoài (`main.c`) tự do khai báo biến `logStruct` với tên tùy ý và truyền địa chỉ vào hàm `logInit(&my_log, &huart)`.
+  + Phía bên trong `logv2.c`, sử dụng một con trỏ tĩnh nội bộ giới hạn phạm vi file (`static logStruct *sp_active_log = NULL;`) để lưu lại địa chỉ struct được gán khi khởi tạo.
+  + Hàm `_write()` chỉ thao tác qua `sp_active_log` sau khi đã kiểm tra an toàn `NULL`.
+- Kết quả: Loại bỏ hoàn toàn từ khóa `extern`, đảm bảo tính đóng gói của thư viện, cho phép người dùng đặt tên biến tùy thích mà không làm hỏng cơ chế hoạt động của `printf`.
+
+* Phân định Ranh giới Kiến trúc: Thư viện Đa dụng (Middleware) vs. Trình điều khiển Nền tảng (Platform Driver):
+- Mâu thuẫn thiết kế:
+  + Khi tích hợp FreeRTOS vào sâu module Log, việc khai báo cấu hình Task tĩnh `static const osThreadAttr_t` và các đối tượng RTOS nội bộ trong file `.c` ban đầu bị nghi ngờ là "vi phạm quy tắc đóng gói / tính tái sử dụng" của một thư viện C.
+  + Nếu cố ép module này phải độc lập để mang sang các OS hoặc MCU khác, kiến trúc sẽ bị kéo theo bài toán phân tách Driver - Middleware đa tầng rất cồng kềnh.
+- Phân tích Bản chất & Định vị Module:
+  + Về bản chất, module Log trong dự án này không mang logic thuật toán phức tạp (như mã hóa hay nén dữ liệu) để cần trở thành một Middleware dùng chung.
+  + Module này đóng vai trò thực tế là một **Platform-specific Driver / System Service (Trình điều khiển kết nối giữa backend `_write` của printf, FreeRTOS Queue và phần cứng UART DMA của STM32)**.
+- Kết luận Kỹ thuật:
+  + Đối với một Driver nền tảng (Platform Driver), việc khai báo các biến và hằng số nội bộ (`static`, `static const`) là **hoàn toàn hợp lệ và chuẩn mực**.
+  + Cách tiếp cận này giúp đóng gói trọn gói toàn bộ cơ chế xử lý bất đồng bộ (Queue, Task, DMA) bên trong Driver, mang lại trải nghiệm tích hợp "cắm là chạy" (Plug & Play) sạch sẽ nhất cho tầng ứng dụng mà không cần thiết kế trừu tượng hóa thừa thãi.
+
+
+* Các Quy tắc Thiết kế Driver & RTOS Cốt lõi:
+1. Chuẩn hóa Vòng đời Module (Lifecycle Pattern): Mọi module/driver chuẩn bắt buộc có bộ ba quản lý trạng thái:
+   - typedef enum Status: Bảng mã lỗi tường minh cho toàn bộ API (OK, ERROR, BUSY, TIMEOUT...).
+   - Init / DeInit: Cấp phát và thu hồi sạch sẽ toàn bộ tài nguyên phần cứng & RTOS.
+   - CheckHealth: Kiểm tra tính toàn vẹn của handle, con trỏ RTOS và Callback trước khi thực thi tác vụ.
+2. Cleanup tài nguyên khi Init thất bại: Nếu tạo Mutex/Semaphore/Queue thất bại ở bước sau, phải giải phóng toàn bộ tài nguyên đã cấp phát ở các bước trước đó (tự động gọi DeInit).
+3. Trình tự Abort trước khi nhả Mutex: Khi xảy ra lỗi hoặc timeout, bắt buộc phải gọi hàm dừng phần cứng (HAL_UART_Abort...) TRƯỚC KHI nhả Mutex để tránh Race Condition giữa các Task.
+4. Single Entry / Single Exit với Mutex: Mutex chiếm ở đầu hàm, nhả ở cuối hàm. Không return bừa bãi giữa chừng khi đang giữ Mutex/tài nguyên (dùng biến status hoặc goto cleanup).
+5. Binary Semaphore đồng bộ ISR <-> Task: Khởi tạo đếm = 0; luôn xả sạch token tồn đọng trước khi chạy DMA; Task chờ (Acquire) - ISR nhả (Release) thay vì dùng vòng lặp chờ/osDelay.
+6. Kiểm tra mã lỗi & Bắt Hardware Error Callback: Luôn kiểm tra status trả về của mọi hàm HAL/RTOS; phải đăng ký Error Callback để đánh thức Task khi có lỗi đường truyền (Overrun/Frame Error), tránh treo Task hết timeout.
+
+* Tiến trình Nâng cấp Kiến trúc: Từ 1 Đối tượng lên Đa Đối tượng Xử lý Song song:
+
+  1. Giai đoạn 1: Chuẩn hóa 1 Đối tượng (Single-Instance Lifecycle)
+  - Tập trung làm đúng và chặt chẽ luồng vòng đời cho 1 đối tượng duy nhất (Enum status, Init, DeInit, CheckHealth, Mutex khóa tài nguyên, Binary Semaphore đồng bộ ISR).
+  - Mục tiêu: Đảm bảo logic RTOS không bị Deadlock, không rò rỉ bộ nhớ, không bị Race Condition khi Abort.
+
+  2. Giai đoạn 2: Đóng gói thành Struct Instance (Object-Oriented in C)
+  - Gom toàn bộ biến trạng thái (Hardware handle, Mutex, Semaphore, Buffer) vào một struct quản lý duy nhất (ví dụ: `drvuart_Handle`).
+  - Người dùng tự khai báo bao nhiêu đối tượng tùy ý ở tầng trên (`drv_uart1`, `drv_uart2`) và truyền con trỏ vào hàm.
+  - Triết lý giảm độ phức tạp: Không xây dựng các bảng quản lý (Registry Table) hay cơ chế định tuyến ngắt phức tạp; mỗi instance tự sở hữu tài nguyên RTOS độc lập.
+
+  3. Giai đoạn 3: Đạt được Xử lý Song song (Parallel Execution) một cách tự nhiên
+  - Nhờ việc mỗi Instance sở hữu Mutex và Semaphore riêng biệt, các Task giao tiếp qua các cổng phần cứng khác nhau (UART1, UART2) có thể thực thi hoàn toàn song song mà không cần viết thêm bất kỳ cơ chế điều phối phức tạp nào.
+
+4. Quyết định Chia sẻ Chung 1 Kênh UART cho CLI và LOG
+- Lý do phần cứng: STM32F411 bị giới hạn số lượng bộ USART (chỉ có 3 bộ, cần ưu tiên chân cho module LoRa và ngoại vi khác).
+- Lý do băng thông:
+  + Với baudrate chuẩn 115200 bps, tốc độ truyền đạt khoảng 11.5 KB/s (đáp ứng tốt 100 ~ 140 dòng log/giây).
+  + Đặc thù của dự án Delta FOTA qua LoRa có chu kỳ nhận gói tin tính bằng hàng trăm mili-giây đến vài giây, mật độ log rất thấp nên hoàn toàn không lo nghẽn đường truyền.
+- Giải pháp kiến trúc:
+  + Logic của module CLI và LOG vẫn giữ độc lập tuyệt đối.
+  + Cả hai module chia sẻ chung một tầng giao vận: Đẩy dữ liệu vào FreeRTOS Queue và sử dụng đúng 1 Task DMA duy nhất để truyền ra cổng UART.
+  + Phía phần mềm máy tính (PC Tool) sử dụng cơ chế lọc đơn giản: Các dòng bắt đầu bằng ký tự '[' được tự động chuyển sang cửa sổ Log, các dòng còn lại được hiển thị ở cửa sổ Command CLI.
+
+
+trình bày về tất cả những thứ mà mcu cần để chạy, "combiler/linker" "bộ nhớ" "luồng thực thi/Lifecycle" 
+trình bày về kiến trúc fota truyền thống -> giải thích tại sao nó lại k phù hợp với f411 -> đề xuất kiến trúc
+Trình bày về luồng tư duy câu chuyện phát triền dự án
+Trình bày về Lifecycle
+

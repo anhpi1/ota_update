@@ -52,7 +52,7 @@ DMA_HandleTypeDef hdma_usart2_rx;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 128 * 4,
+  .stack_size = 65 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */
@@ -73,28 +73,18 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#include "logv2.h"
+#include "service/logging/serLog.h"
 
 
-uint8_t uart1_tx_buf[256];
-LogMessage Lmsg;
 
 
-BuffUart data_uart2 = {0};
+BuffUart data_uart2;
 
-
-osThreadId_t logTaskHandle;
-const osThreadAttr_t logTask_attributes = {
-  .name = "logTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-void logTask(void *argument);
 
 osThreadId_t testTaskHandle;
 const osThreadAttr_t testTask_attributes = {
   .name = "testTask",
-  .stack_size = 128 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 void testTask(void *argument);
@@ -162,11 +152,14 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-
-
-  logTaskHandle = osThreadNew(logTask, NULL, &logTask_attributes);
+  
   testTaskHandle = osThreadNew(testTask, NULL, &testTask_attributes);
 
+  if (defaultTaskHandle == NULL) {
+      // Handle error: task creation failed
+      while (1);
+  }
+  log_Init(&huart1);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -348,23 +341,28 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void logTask(void *argument)
-{
-  /* USER CODE BEGIN 5 */
-    for(;;)
-    {
-      log_transmit();
-      osDelay(10); // Delay 10ms to avoid excessive CPU usage
-    }
-  /* USER CODE END 5 */
-}
 
 void testTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   for(;;)
   {
-    LOG_INFO("Test log message: %f", 12.3);
+    LOG(I, "Test log message from testTask");
+    LOG(W, "This is a warning message");
+    LOG(E, "This is an error message");
+    LOG(I, "Test log message from testTask");
+    LOG(W, "This is a warning message");
+    LOG(E, "This is an error message");
+    LOG(I, "Test log message from testTask");
+    LOG(W, "This is a warning message");
+    LOG(E, "This is an error message");
+    LOG(I, "Test log message from testTask");
+    LOG(W, "This is a warning message");
+    LOG(E, "This is an error message");
+    osDelay(1000); // Delay 1s để tránh chiếm CPU quá nhiều
+    LOG(I, "Test log message from testTask");
+    LOG(W, "This is a warning message");
+    LOG(E, "This is an error message");
     osDelay(1000); // Delay 1s để tránh chiếm CPU quá nhiều
   }
   /* USER CODE END 5 */
@@ -381,11 +379,36 @@ void testTask(void *argument)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-    for(;;)
-    {
+  char buf[16];
+  for(;;)
+  {
+    uint32_t free_stack = log_GetTaskStackSpace();
+    uint32_t val = free_stack/4; 
+    //uint32_t val = osThreadGetStackSpace(testTaskHandle)/4; 
 
-      osDelay(10); // Delay 10ms to avoid excessive CPU usage
+    uint8_t len = 0;
+    char temp[10];
+    uint8_t t_idx = 0;
+
+    if (val == 0) temp[t_idx++] = '0';
+    while (val > 0) {
+      temp[t_idx++] = (char)((val % 10) + '0');
+      val /= 10;
     }
+    while (t_idx > 0) buf[len++] = temp[--t_idx];
+
+    buf[len++] = '\r';
+    buf[len++] = '\n';
+
+    /* Nếu UART2 bị kẹt trạng thái thì reset lại về READY để luôn gửi được */
+    if (huart2.gState != HAL_UART_STATE_READY) {
+      huart2.gState = HAL_UART_STATE_READY;
+    }
+
+    HAL_UART_Transmit(&huart2, (uint8_t *)buf, len, 50);
+
+    osDelay(100);
+  }
   /* USER CODE END 5 */
 }
 
