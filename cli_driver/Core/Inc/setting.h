@@ -7,7 +7,7 @@
 #define SET_LOG_MAX_LENGTH 128      // Độ dài tối đa của một log message
 #define SET_LOG_MAX_QUEUE_LENGTH 16 // Số lượng log tối đa trong hàng đợi
 #define SET_LOG_TIMEOUT 10          // timeout trong ms khi gửi log ra uart
-#define SET_TESTLOG_ON 0            // Bật/tắt tính năng test log
+#define SET_TESTLOG_ON 1            // Bật/tắt tính năng test log
 #define SET_SET_LOG_STACK_CHECK 1   // Bật/tắt tính năng kiểm tra dung lượng stack còn trống của task log transmit
 
 
