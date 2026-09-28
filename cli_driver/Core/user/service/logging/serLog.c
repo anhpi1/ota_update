@@ -4,14 +4,14 @@
 static volatile uint16_t log_queue_full_count = 0;
 static volatile uint16_t log_queue_error_count = 0;
 
-static UART_HandleTypeDef *log_uart;
+static drvuart_Handle *log_handle;
 
 
 static osMessageQueueId_t log_queue;
 static osThreadId_t log_TaskHandle;
 static const osThreadAttr_t log_Task_attributes = {
   .name = "log_TaskTransmit",
-  .stack_size = 256 * 4,
+  .stack_size = 117 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -50,8 +50,8 @@ void log_TaskTransmit(void *argument)
         log_Element log_buffer;
         osStatus_t stat = osMessageQueueGet(log_queue, &log_buffer, NULL, osWaitForever);
         if (stat == osOK) {
-            if (log_uart != NULL) {
-                drvuart_Transmit((uint8_t *)log_buffer.buff, log_buffer.length, LOG_TIMEOUT);
+            if (log_handle != NULL) {
+                drvuart_Transmit(log_handle, (uint8_t *)log_buffer.buff, log_buffer.length, LOG_TIMEOUT);
             }
         }
     }
@@ -72,17 +72,20 @@ const char* get_filename(const char *path) {
     return name;
 }
 
-log_Status log_Init(UART_HandleTypeDef *huart)
+log_Status log_Init(drvuart_Handle *handle)
 {
     log_Status status = logS_ok;
-    if(huart == NULL) return logS_error;
-    log_uart = huart;
+    if(handle == NULL) return logS_error;
+
+    log_handle = handle;
 
     log_queue = osMessageQueueNew(LOG_MAX_QUEUE_LENGTH, sizeof(log_Element), NULL);
     log_TaskHandle = osThreadNew(log_TaskTransmit, NULL, &log_Task_attributes);
 
-    if (log_CheckHealth() != logS_ok) log_DeInit();
+    if (log_CheckHealth() != logS_ok) status = logS_error;
     
+    if(status != logS_ok) log_DeInit(); // Clean up if initialization failed
+
     return status;
 }
 
@@ -107,7 +110,7 @@ log_Status log_DeInit(void)
 
 log_Status log_CheckHealth(void)
 {
-    if (log_queue == NULL || log_TaskHandle == NULL) return logS_error;
+    if (log_queue == NULL || log_TaskHandle == NULL || log_handle == NULL) return logS_error;
     return logS_ok;
 }
 

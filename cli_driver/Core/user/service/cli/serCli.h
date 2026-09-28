@@ -3,41 +3,40 @@
 
 // cli được thiết kế theo dạng chỉ xử lý 1 lệnh rồi mới nhận lệnh tiếp theo không có hàng đợi thực thi lệnh
 // vì nó không cần thiết, tốc độ nhập của con người khá chậm và tốc độ thực thi lệnh cũng khá nhanh
-
+// cli phụ thuộc vào log, vì vậy cần khởi tạo log trước khi khởi tạo cli
 
 #include "main.h"
 #include "string.h"
 #include "cmsis_os.h"
+#include "driver/uart/drvUart.h"
+#include "stdio.h"
+#include "service/logging/serLog.h"
 
-
-
-//setting
-#define CLI_MAX_BUFF_LENGTH 128
+#define CLI_MAX_COMMAND_LENGTH 256
+#define CLI_MAX_PARAMETERS 10
 
 
 typedef enum {
-    CLI_OK = 0,
-    CLI_ERROR,
-    CLI_UART_BUSY
+    cliS_ok=0,
+    cliS_error,
+    cliS_uart_busy,
+    cliS_timeout
 } cli_Status;
 
 typedef struct {
-    UART_HandleTypeDef *huart;
-    char msg_rx[CLI_MAX_BUFF_LENGTH];
-    char msg_tx[CLI_MAX_BUFF_LENGTH];
-    uint8_t tx_length;
-    uint8_t rx_length;
-    uint8_t is_data_rx_ready;
-    uint8_t is_data_tx_ready;
-} cli_Struct;
+    const char *command;
+    cli_Status (*handler)(const uint8_t argc, const char * const argv[]);
+    const char *help;
+} cli_CommandStruct;
+
+
+cli_Status cli_Init();
+cli_Status cli_DeInit();
+cli_Status cli_CheckHealth();
 
 
 
-cli_Status cli_Init(cli_Struct *Struct, UART_HandleTypeDef *Huart);
-cli_Status cli_CallBackReceive(cli_Struct *Struct, uint8_t Size);
-cli_Status cli_Receive(cli_Struct *Struct);
-cli_Status cli_Transmit(cli_Struct *Struct);
-cli_Status cli_HandleCommand(cli_Struct *Struct);
+
 
 
 

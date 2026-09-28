@@ -1,8 +1,8 @@
-#ifndef serLog_H
-#define serLog_H
+#ifndef SERLOG_H
+#define SERLOG_H
 
 // driver log kết nối lệnh printf với uart để in ra log, có thể sử dụng printf để in ra log
-// cần phải bật tính năng #define  USE_HAL_UART_REGISTER_CALLBACKS        1U 
+// về bản chất thư viện này sử dụng printf để in log, nên nếu sử dụng printf nên khới tạo thư viện này
 // sử dụng RTOS 
 // không sử dụng hàm này trong ngắt
 
@@ -15,11 +15,11 @@
 #include "stdint.h"
 #include "driver/uart/drvUart.h"
 
-#define LOG_MAX_LENGTH SETTING_LOG_MAX_LENGTH 
-#define LOG_MAX_QUEUE_LENGTH SETTING_LOG_MAX_QUEUE_LENGTH 
-#define LOG_TIMEOUT SETTING_LOG_TIMEOUT // Timeout in milliseconds for queue operations
+#define LOG_MAX_LENGTH SET_LOG_MAX_LENGTH 
+#define LOG_MAX_QUEUE_LENGTH SET_LOG_MAX_QUEUE_LENGTH 
+#define LOG_TIMEOUT SET_LOG_TIMEOUT // Timeout in milliseconds for queue operations
 
-#define LOG_STACK_CHECK 1
+#define LOG_STACK_CHECK SET_LOG_STACK_CHECK // Bật/tắt tính năng kiểm tra dung lượng stack còn trống của task log
 
 
 typedef enum {
@@ -38,8 +38,7 @@ typedef struct {
 
 
 
-
-log_Status log_Init(UART_HandleTypeDef *huart);
+log_Status log_Init(drvuart_Handle *handle);
 log_Status log_DeInit(void);
 log_Status log_CheckHealth(void);
 const char* get_filename(const char *path);

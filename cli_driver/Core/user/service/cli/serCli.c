@@ -1,69 +1,141 @@
 #include "serCli.h"
 
 
+static osThreadId_t cli_TaskHandle;
+static const osThreadAttr_t cli_Task_attributes = {
+  .name = "cli_TaskTransmit",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+static drvuart_Handle *cli_drv_uart_handle;
 
 
-cli_Status cli_Init(cli_Struct *Struct, UART_HandleTypeDef *Huart)
+
+static cli_Status cli_cmd_Help(const uint8_t argc, const char * const argv[]);
+static cli_Status cli_cmd_Version(const uint8_t argc, const char * const argv[]);
+static uint8_t cli_SplitString(char *input, char *output[], uint8_t max_parameters);
+static void cli_HearTask(void *argument);
+
+static cli_CommandStruct sp_cli_commands[] = 
 {
-    if (Struct == NULL || Huart == NULL) return CLI_ERROR;
-    
+    {"help", cli_cmd_Help, "Show available commands"},
+    {"version", cli_cmd_Version, "Show version information"},
+    {NULL, NULL, NULL}
+};
 
-    Struct->huart = Huart;
+cli_Status cli_Init(drvuart_Handle *drv_handle)
+{
+    cli_Status status = cliS_ok;
+   
+    if(drv_handle == NULL) return cliS_error;
 
-    Struct->rx_length = 0;
-    Struct->tx_length = 0;
-    Struct->is_data_rx_ready = 0;
-    Struct->is_data_tx_ready = 0;
+    cli_drv_uart_handle = drv_handle;   
+    cli_TaskHandle = osThreadNew(cli_HearTask, NULL, &cli_Task_attributes);
 
-    return CLI_OK;
+    if (cli_CheckHealth() != cliS_ok) status = cliS_error;
+
+    if(status != cliS_ok) cli_DeInit(); // Clean up if initialization failed
+
+    return status;
 }
 
-cli_Status cli_Receive(cli_Struct *Struct)
+cli_Status cli_DeInit()
 {
-    if (Struct == NULL) return CLI_ERROR;
-    if (Struct->huart->RxState != HAL_UART_STATE_READY) return CLI_UART_BUSY; // UART is busy
-    Struct->is_data_rx_ready = 0; 
-    HAL_UARTEx_ReceiveToIdle_DMA(Struct->huart, (uint8_t *)Struct->msg_rx, CLI_MAX_BUFF_LENGTH);
-    return CLI_OK;
+    cli_drv_uart_handle = NULL;
+    if (cli_TaskHandle != NULL) osThreadTerminate(cli_TaskHandle);
+    cli_TaskHandle = NULL;
+    return cliS_ok;
 }
 
-cli_Status cli_CallBackReceive(cli_Struct *Struct, uint8_t Size)
+cli_Status cli_CheckHealth(void)
 {
-    if (Struct == NULL) return CLI_ERROR;
-    Struct->is_data_rx_ready = 1;
-    Struct->rx_length = Size;
-    Struct->msg_rx[Size] = '\0';
-    return CLI_OK;
+    if(cli_drv_uart_handle == NULL || cli_TaskHandle == NULL) return cliS_error;
+     if( log_CheckHealth() != logS_ok) return cliS_error;
+    return cliS_ok;
 }
 
-cli_Status cli_Transmit(cli_Struct *Struct)
+cli_Status cli_HandleCommand(uint8_t argc, const char * const argv[])
 {
-    if (Struct == NULL) return CLI_ERROR;
-    if (Struct->huart->gState != HAL_UART_STATE_READY) return CLI_UART_BUSY; // UART is busy
-    Struct->is_data_tx_ready = 0; 
-    HAL_UART_Transmit_DMA(Struct->huart, (uint8_t *)Struct->msg_tx, Struct->tx_length);
-    return CLI_OK;
+    if (argc == 0 || argv == NULL) {
+        return cliS_error;
+    }
+
+    for (cli_CommandStruct *cmd = sp_cli_commands; cmd->command != NULL; cmd++) {
+        if (strcmp(argv[0], cmd->command) == 0) {
+            if (cmd->handler != NULL) {
+                cmd->handler(argc, argv); 
+                return cliS_ok;
+            } else {
+                return cliS_error;
+            }
+        }
+    }
+
+    return cliS_error;
+}
+
+void cli_HearTask(void *argument)
+{
+    while (1)
+    {
+        cli_Status clistatus = cliS_ok;
+        drvuart_Status status = DRVUART_OK;
+        char cli_buffer[CLI_MAX_COMMAND_LENGTH] = {0};    
+        uint16_t cli_buffer_length = 0;
+        status = drvuart_Receive(cli_drv_uart_handle, (uint8_t *)cli_buffer, &cli_buffer_length, osWaitForever);
+        if (status != DRVUART_OK || cli_buffer_length == 0 ) continue; // Skip to the next iteration if there's an error
+        if (cli_buffer_length > CLI_MAX_COMMAND_LENGTH)
+        {
+            printf("Received command length exceeds maximum allowed length.\r\n");
+            continue; // Skip to the next iteration if the command is too long
+        }
+        printf("\r\n");
+        
+
+        char *cli_args[CLI_MAX_PARAMETERS] = {0};
+        uint8_t args_count = cli_SplitString(cli_buffer, cli_args, CLI_MAX_PARAMETERS);
+        if (args_count == 0) continue; // Bỏ qua nếu chuỗi rỗng hoặc chỉ có khoảng trắng / Enter
+
+        clistatus = cli_HandleCommand(args_count, (const char * const *)cli_args);
+
+        if (clistatus != cliS_ok)
+        {
+            printf("Invalid command or error executing command.\r\n");
+            cli_cmd_Help(0, NULL); // Show help if the command is invalid
+        }
+
+    }
 }
 
 
-cli_Status cli_HandleCommand(cli_Struct *Struct)
-{
-    if (Struct == NULL) return CLI_ERROR;
-    return CLI_OK;
-}
 
 
-uint8_t CLI_split_string(char *input, char *output[], uint16_t max_parameters)
+static uint8_t cli_SplitString(char *input, char *output[], uint8_t max_parameters) 
 {   
     // strtok đã phá hủy biến input vì biến input không cần thiết sau khi tách lệnh nên có thể để phá hủy
     // nếu sử dụng dma thì nên copy input sang biến khác để tránh phá hủy input
-    uint16_t parameter_count = 0;
-    char *token = strtok(input, " ");
+    uint8_t parameter_count = 0;
+    char *token = strtok(input, " \r\n"); // Split by space, carriage return, and newline
     
     while (token != NULL && parameter_count < max_parameters) {
         output[parameter_count++] = token;
-        token = strtok(NULL, " ");
+        token = strtok(NULL, " \r\n"); // Continue splitting the string
     }
     
     return parameter_count;
+}
+
+static cli_Status cli_cmd_Help(const uint8_t argc, const char * const argv[]) 
+{
+    printf("Available commands:\n");
+    for (cli_CommandStruct *cmd = sp_cli_commands; cmd->command != NULL; cmd++) {
+        printf("  %s: %s\n", cmd->command, cmd->help);
+    }
+    return cliS_ok;
+}
+
+static cli_Status cli_cmd_Version(const uint8_t argc, const char * const argv[])
+{
+    printf("CLI Version: 1.0.0\n");
+    return cliS_ok;
 }

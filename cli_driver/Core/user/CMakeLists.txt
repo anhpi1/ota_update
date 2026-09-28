@@ -16,6 +16,12 @@ target_sources(user_lib PRIVATE
     driver/uart/drvUart.c
 )
 
+# Khối test
+target_sources(user_lib PRIVATE
+    tester/testLog.c
+)
+
+
 # Thư mục gốc để include dạng #include "service/logging/serLog.h"
 target_include_directories(user_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
