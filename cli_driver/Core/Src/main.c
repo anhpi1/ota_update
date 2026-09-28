@@ -73,15 +73,10 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#include "service/logging/serLog.h"
-#include "tester/testLog.h"
-#include "driver/uart/drvUart.h"
-#include "service/cli/serCli.h"
-drvuart_Handle huart1_handle;
 
 
 
-
+#include "app/startup.h"
 
 
 /* USER CODE END 0 */
@@ -148,14 +143,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_THREADS */
 
 
-  drvuart_Init(&huart1_handle, &huart1);
-  log_Init(&huart1_handle);
-  cli_Init(&huart1_handle);
+  startup_Init(&huart1); // Initialize the application with huart1
 
 
 
-  
-  TESTLOG();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -350,7 +341,6 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  char buf[16];
   for(;;)
   {
     

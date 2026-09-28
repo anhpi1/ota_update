@@ -30,9 +30,9 @@ typedef struct {
 } cli_CommandStruct;
 
 
-cli_Status cli_Init();
-cli_Status cli_DeInit();
-cli_Status cli_CheckHealth();
+cli_Status cli_Init(drvuart_Handle *drv_handle, cli_CommandStruct *commands);
+cli_Status cli_DeInit(void);
+cli_Status cli_CheckHealth(void);
 
 
 

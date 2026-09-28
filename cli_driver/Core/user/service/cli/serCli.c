@@ -11,24 +11,22 @@ static drvuart_Handle *cli_drv_uart_handle;
 
 
 
-static cli_Status cli_cmd_Help(const uint8_t argc, const char * const argv[]);
-static cli_Status cli_cmd_Version(const uint8_t argc, const char * const argv[]);
+
 static uint8_t cli_SplitString(char *input, char *output[], uint8_t max_parameters);
 static void cli_HearTask(void *argument);
 
-static cli_CommandStruct sp_cli_commands[] = 
-{
-    {"help", cli_cmd_Help, "Show available commands"},
-    {"version", cli_cmd_Version, "Show version information"},
-    {NULL, NULL, NULL}
-};
 
-cli_Status cli_Init(drvuart_Handle *drv_handle)
+
+
+static cli_CommandStruct *p_cli_commands; // Pointer to the command array
+
+cli_Status cli_Init(drvuart_Handle *drv_handle, cli_CommandStruct *commands)
 {
     cli_Status status = cliS_ok;
    
-    if(drv_handle == NULL) return cliS_error;
+    if(drv_handle == NULL || commands == NULL) return cliS_error;
 
+    p_cli_commands = commands;
     cli_drv_uart_handle = drv_handle;   
     cli_TaskHandle = osThreadNew(cli_HearTask, NULL, &cli_Task_attributes);
 
@@ -39,11 +37,12 @@ cli_Status cli_Init(drvuart_Handle *drv_handle)
     return status;
 }
 
-cli_Status cli_DeInit()
+cli_Status cli_DeInit(void)
 {
     cli_drv_uart_handle = NULL;
     if (cli_TaskHandle != NULL) osThreadTerminate(cli_TaskHandle);
     cli_TaskHandle = NULL;
+    p_cli_commands = NULL;
     return cliS_ok;
 }
 
@@ -60,7 +59,7 @@ cli_Status cli_HandleCommand(uint8_t argc, const char * const argv[])
         return cliS_error;
     }
 
-    for (cli_CommandStruct *cmd = sp_cli_commands; cmd->command != NULL; cmd++) {
+    for (cli_CommandStruct *cmd = p_cli_commands; cmd->command != NULL; cmd++) {
         if (strcmp(argv[0], cmd->command) == 0) {
             if (cmd->handler != NULL) {
                 cmd->handler(argc, argv); 
@@ -98,11 +97,7 @@ void cli_HearTask(void *argument)
 
         clistatus = cli_HandleCommand(args_count, (const char * const *)cli_args);
 
-        if (clistatus != cliS_ok)
-        {
-            printf("Invalid command or error executing command.\r\n");
-            cli_cmd_Help(0, NULL); // Show help if the command is invalid
-        }
+        if (clistatus != cliS_ok) printf("Invalid command or error executing command.\r\n");
 
     }
 }
@@ -125,17 +120,3 @@ static uint8_t cli_SplitString(char *input, char *output[], uint8_t max_paramete
     return parameter_count;
 }
 
-static cli_Status cli_cmd_Help(const uint8_t argc, const char * const argv[]) 
-{
-    printf("Available commands:\n");
-    for (cli_CommandStruct *cmd = sp_cli_commands; cmd->command != NULL; cmd++) {
-        printf("  %s: %s\n", cmd->command, cmd->help);
-    }
-    return cliS_ok;
-}
-
-static cli_Status cli_cmd_Version(const uint8_t argc, const char * const argv[])
-{
-    printf("CLI Version: 1.0.0\n");
-    return cliS_ok;
-}

@@ -7,9 +7,9 @@ target_sources(user_lib PRIVATE
 )
 
 # Khối app (Khi nào có file thì mở ra dùng)
-# target_sources(user_lib PRIVATE
-#     app/main_app.c
-# )
+target_sources(user_lib PRIVATE
+    app/startup.c
+)
 
 # Khối driver (Khi nào có file thì mở ra dùng)
 target_sources(user_lib PRIVATE
