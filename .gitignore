@@ -1,0 +1,30 @@
+# Ignore all by default
+/*
+.*
+
+# Whitelist root readme and gitignore
+!/.gitignore
+!/readme.md
+!/README.md
+
+# Whitelist app1/Core/user
+!/app1/
+/app1/*
+/app1/.*
+!/app1/Core/
+/app1/Core/*
+/app1/Core/.*
+!/app1/Core/user/
+
+# Whitelist app2/Core/user
+!/app2/
+/app2/*
+/app2/.*
+!/app2/Core/
+/app2/Core/*
+/app2/Core/.*
+!/app2/Core/user/
+
+# Explicitly ignore IDE settings
+.settings/
+.vscode/
